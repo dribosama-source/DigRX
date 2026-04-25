@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>National AI Medication Governance Portal v4.0</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        :root { --egypt-blue: #1a4e8a; --eda-green: #2d8a57; --warning-red: #d32f2f; --bg-gray: #f8f9fa; --gold: #c5a059; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-gray); padding: 20px; color: #333; }
+        .container { max-width: 1100px; margin: auto; background: white; border-radius: 12px; box-shadow: 0 4px 25px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: var(--egypt-blue); color: white; padding: 25px; text-align: center; border-bottom: 5px solid var(--gold); }
+        .section { padding: 20px; border-bottom: 1px solid #eee; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 0.85rem; color: #555; }
+        input, select { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
+        
+        /* Status Banner */
+        .status-banner { padding: 15px; border-radius: 8px; text-align: center; font-weight: bold; margin-bottom: 20px; font-size: 1.2rem; border: 2px solid transparent; }
+        .status-not-dispensed { background: #d4edda; color: var(--eda-green); border-color: #c3e6cb; }
+        .status-dispensed { background: #f8d7da; color: var(--warning-red); border-color: #f5c6cb; }
+
+        /* Clinical Cards */
+        .diagnosis-card { background: #f0f4f8; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid var(--egypt-blue); }
+        .med-entry { background: white; padding: 12px; border-radius: 8px; margin-top: 10px; border: 1px solid #dee2e6; display: grid; grid-template-columns: 2fr 1fr 1fr 0.5fr; gap: 10px; align-items: end; }
+        
+        .btn { border: none; border-radius: 8px; padding: 12px; font-weight: bold; cursor: pointer; transition: 0.3s; margin-top: 10px; text-transform: uppercase; }
+        .btn-add { background: var(--egypt-blue); color: white; width: auto; }
+        .btn-confirm { background: var(--eda-green); color: white; width: 100%; font-size: 1.1rem; margin-top: 20px; }
+        .btn-remove { background: #fee2e2; color: var(--warning-red); font-size: 0.7rem; }
+        
+        #prescription-output { display: none; padding: 40px; border: 2px solid var(--egypt-blue); margin-top: 20px; background: white; position: relative; }
+        @media print { .no-print { display: none !important; } #prescription-output { display: block !important; border: none; } }
+    </style>
+</head>
+<body>
+
+<div class="container no-print">
+    <div class="header">
+        <h1 style="margin:0;">National AI Medication Governance Portal</h1>
+        <p style="margin:5px 0 0;">Unified Health Insurance (UHI) Interoperability Framework</p>
+    </div>
+
+    <div id="dispense-alarm" class="status-banner status-not-dispensed">
+        STATUS: NOT DISPENSED
+    </div>
+
+    <div class="section">
+        <h3>Administrative Metadata</h3>
+        <div class="grid">
+            <div><label>Hospital/Facility</label><input type="text" id="facility" value="UHI Specialized Medical Center"></div>
+            <div><label>Treating Physician</label><input type="text" id="physician" placeholder="Dr. Name (MoHP ID)"></div>
+            <div><label>Date (Auto)</label><input type="text" id="current-date" readonly></div>
+            <div><label>File Number</label><input type="text" id="file-number" readonly></div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>Patient Identification</h3>
+        <div class="grid">
+            <div><label>National ID</label><input type="text" id="nid" maxlength="14" placeholder="Enter 14-digit NID"></div>
+            <div><label>Patient Name</label><input type="text" id="p-name"></div>
+            <div><label>Date of Birth</label><input type="date" id="dob" onchange="calcAge()"></div>
+            <div><label>Age</label><input type="text" id="p-age" readonly></div>
+        </div>
+    </div>
+
+    <div class="section">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3>Clinical Assessment & Medications</h3>
+            <button class="btn btn-add" onclick="addDiagnosis()">+ Add Diagnosis Card</button>
+        </div>
+        
+        <div id="clinical-container">
+            <div class="diagnosis-card" id="diag-0">
+                <div class="grid">
+                    <div style="grid-column: span 2;">
+                        <label>Written Diagnosis</label>
+                        <input type="text" class="diag-input" onkeyup="mapICD10(this)" placeholder="e.g. Type 2 Diabetes">
+                    </div>
+                    <div><label>ICD-10 Code</label><input type="text" class="icd-output" readonly placeholder="Auto-mapped"></div>
+                </div>
+                <div class="med-container">
+                    <div class="med-entry">
+                        <div>
+                            <label>Drug (EDA Standard)</label>
+                            <select class="med-select">
+                                <option value="EDA-001">Metformin 500mg</option>
+                                <option value="EDA-002">Augmentin 1g</option>
+                                <option value="EDA-003">Insulin Glargine</option>
+                                <option value="EDA-004">Warfarin 5mg</option>
+                            </select>
+                        </div>
+                        <div><label>Dose</label><input type="text" class="med-dose" placeholder="1x2"></div>
+                        <div><label>Duration</label><input type="text" class="med-duration" placeholder="30 Days"></div>
+                        <button class="btn btn-remove" onclick="removeMed(this)">✕</button>
+                    </div>
+                </div>
+                <button class="btn btn-add" style="font-size: 0.8rem; background: #cbd5e1; color: #1e293b;" onclick="addMedication(this)">+ Link Medication</button>
+            </div>
+        </div>
+
+        <button class="btn btn-confirm" onclick="confirmDispense()">CONFIRM DISPENSE & LOCK RECORD</button>
+        <button class="btn" style="background: #64748b; color: white; width: 100%;" onclick="generateToken(false)">PRE-VIEW PRESCRIPTION</button>
+    </div>
+</div>
+
+<div id="prescription-output">
+    <div style="display: flex; justify-content: space-between; border-bottom: 3px solid var(--egypt-blue); padding-bottom: 10px;">
+        <div>
+            <h2 style="color: var(--egypt-blue); margin: 0;">E-PRESCRIPTION TOKEN</h2>
+            <p><strong>File ID:</strong> <span id="out-file"></span></p>
+        </div>
+        <div id="qrcode"></div>
+    </div>
+    
+    <div class="grid" style="margin-top: 20px; font-size: 0.9rem;">
+        <div>
+            <p><strong>Facility:</strong> <span id="out-facility"></span></p>
+            <p><strong>Physician:</strong> <span id="out-physician"></span></p>
+            <p><strong>Date:</strong> <span id="out-date"></span></p>
+        </div>
+        <div>
+            <p><strong>Patient:</strong> <span id="out-pname"></span> (<span id="out-page"></span> Yrs)</p>
+            <p><strong>National ID:</strong> <span id="out-pnid"></span></p>
+        </div>
+    </div>
+
+    <div id="out-summary" style="margin-top:20px;"></div>
+
+    <div id="status-footer" style="padding: 15px; border-radius: 8px; font-size: 0.9rem; margin-top: 20px; font-weight: bold; border-left: 10px solid;">
+        AI GOVERNANCE: <span id="out-status-text"></span>
+    </div>
+    <button class="btn no-print" onclick="window.print()" style="background: #333; color: white; margin-top: 20px;">Print Official Copy</button>
+</div>
+
+<script>
+    document.getElementById('current-date').value = new Date().toLocaleDateString();
+    document.getElementById('file-number').value = "UHI-RX-" + Math.random().toString(36).substr(2, 8).toUpperCase();
+
+    let diagCount = 1;
+
+    function addDiagnosis() {
+        const container = document.getElementById('clinical-container');
+        const clone = document.getElementById('diag-0').cloneNode(true);
+        clone.id = `diag-${diagCount++}`;
+        clone.querySelector('.med-container').innerHTML = ''; 
+        addMedication(clone.querySelector('.btn-add'));
+        container.appendChild(clone);
+    }
+
+    function addMedication(btn) {
+        const container = btn.previousElementSibling;
+        const row = document.querySelector('.med-entry').cloneNode(true);
+        row.querySelectorAll('input').forEach(i => i.value = '');
+        container.appendChild(row);
+    }
+
+    function removeMed(btn) {
+        if(btn.closest('.med-container').children.length > 1) btn.closest('.med-entry').remove();
+    }
+
+    function calcAge() {
+        const dob = new Date(document.getElementById('dob').value);
+        document.getElementById('p-age').value = Math.abs(new Date(Date.now() - dob.getTime()).getUTCFullYear() - 1970);
+    }
+
+    function mapICD10(input) {
+        const val = input.value.toLowerCase();
+        const codes = { "diabetes": "E11.9", "hypertension": "I10", "infection": "A49.9", "asthma": "J45.9" };
+        const out = input.closest('.grid').querySelector('.icd-output');
+        out.value = "Searching...";
+        for (let key in codes) { if (val.includes(key)) out.value = codes[key]; }
+    }
+
+    function confirmDispense() {
+        const alarm = document.getElementById('dispense-alarm');
+        alarm.innerText = "STATUS: DISPENSED";
+        alarm.className = "status-banner status-dispensed";
+        generateToken(true);
+    }
+
+    function generateToken(isLocked) {
+        document.getElementById('out-file').innerText = document.getElementById('file-number').value;
+        document.getElementById('out-facility').innerText = document.getElementById('facility').value;
+        document.getElementById('out-physician').innerText = document.getElementById('physician').value;
+        document.getElementById('out-date').innerText = document.getElementById('current-date').value;
+        document.getElementById('out-pname').innerText = document.getElementById('p-name').value;
+        document.getElementById('out-page').innerText = document.getElementById('p-age').value;
+        document.getElementById('out-pnid').innerText = document.getElementById('nid').value;
+
+        const summary = document.getElementById('out-summary');
+        summary.innerHTML = "";
+        let qrData = `RX:${document.getElementById('file-number').value}|NID:${document.getElementById('nid').value}|`;
+
+        document.querySelectorAll('.diagnosis-card').forEach(card => {
+            const diag = card.querySelector('.diag-input').value;
+            const icd = card.querySelector('.icd-output').value;
+            const section = document.createElement('div');
+            section.innerHTML = `<h4 style='border-bottom:1px solid #ccc; margin-bottom:5px;'>Diagnosis: ${diag} (${icd})</h4>`;
+            const ul = document.createElement('ul');
+            card.querySelectorAll('.med-entry').forEach(row => {
+                const med = row.querySelector('.med-select').selectedOptions[0].text;
+                const dose = row.querySelector('.med-dose').value;
+                const dur = row.querySelector('.med-duration').value;
+                const li = document.createElement('li');
+                li.innerHTML = `<strong>${med}</strong> — ${dose} for ${dur}`;
+                ul.appendChild(li);
+                qrData += `${med};`;
+            });
+            section.appendChild(ul);
+            summary.appendChild(section);
+        });
+
+        const footer = document.getElementById('status-footer');
+        const statusText = document.getElementById('out-status-text');
+        if(isLocked) {
+            footer.style.borderColor = "var(--warning-red)";
+            footer.style.backgroundColor = "#fee2e2";
+            statusText.innerText = "DISPENSED";
+        } else {
+            footer.style.borderColor = "var(--eda-green)";
+            footer.style.backgroundColor = "#d4edda";
+            statusText.innerText = "NOT DISPENSED";
+        }
+
+        document.getElementById('qrcode').innerHTML = "";
+        new QRCode(document.getElementById("qrcode"), { text: qrData, width: 100, height: 100 });
+        document.getElementById('prescription-output').style.display = 'block';
+        window.scrollTo(0, document.body.scrollHeight);
+    }
+</script>
+</body>
+</html>
